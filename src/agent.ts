@@ -38,6 +38,7 @@ ${companies
 export type AgentEvent =
   | { type: "iteration"; n: number }
   | { type: "model_call"; ms: number; usage: Anthropic.Usage }
+  | { type: "text"; delta: string }
   | { type: "tool_start"; id: string; name: string; input: unknown }
   | { type: "tool_end"; id: string; name: string; ms: number; error?: string };
 
@@ -48,6 +49,27 @@ export interface AgentResult {
 
 /** Prior turns of the conversation, as plain text. The last one is the new question. */
 export type ChatTurn = { role: "user" | "assistant"; content: string };
+
+/** How many prior turns we send back to the model. Older context is dropped. */
+const MAX_TURNS = 20;
+
+/** Validate a request body's `messages` and trim it to the most recent turns. */
+export function parseHistory(body: unknown): ChatTurn[] | null {
+  const raw = (body as { messages?: unknown })?.messages;
+  if (!Array.isArray(raw) || raw.length === 0) return null;
+  const valid = raw.every(
+    (t) =>
+      (t?.role === "user" || t?.role === "assistant") &&
+      typeof t.content === "string" &&
+      t.content.trim() !== "",
+  );
+  if (!valid || raw.at(-1).role !== "user") return null;
+
+  // The window must start on a user turn, or the API rejects the conversation.
+  const turns = raw.slice(-MAX_TURNS);
+  while (turns[0].role !== "user") turns.shift();
+  return turns.map((t) => ({ role: t.role, content: t.content }));
+}
 
 function textOf(message: Anthropic.Message): string {
   return message.content
@@ -87,7 +109,9 @@ export async function runAgent(
     const lastChance = iterations === MAX_ITERATIONS;
     const startedAt = Date.now();
 
-    const response = await client.messages.create(
+    // Stream so the analyst sees the answer as it's written rather than after
+    // the whole response (the final answer is most of the wall-clock time).
+    const stream = client.messages.stream(
       {
         model: MODEL,
         max_tokens: 16000,
@@ -103,6 +127,8 @@ export async function runAgent(
       },
       { signal },
     );
+    stream.on("text", (delta) => onEvent({ type: "text", delta }));
+    const response = await stream.finalMessage();
 
     onEvent({ type: "model_call", ms: Date.now() - startedAt, usage: response.usage });
     messages.push({ role: "assistant", content: response.content });

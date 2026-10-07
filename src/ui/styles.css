@@ -92,6 +92,10 @@ header p {
   color: #8b97a3;
 }
 
+.bubble.pending .streaming {
+  color: #12181f;
+}
+
 .bubble.error {
   background: #fdf3f2;
   border-color: #f1d3cf;

@@ -20,6 +20,7 @@ interface Message {
 /** Lines the server streams back, one JSON object per line. */
 type ServerEvent =
   | { type: "iteration"; n: number }
+  | { type: "text"; delta: string }
   | { type: "tool_start"; id: string; name: string; input: Record<string, unknown> }
   | { type: "tool_end"; id: string; name: string; ms: number; error?: string }
   | { type: "answer"; text: string }
@@ -70,23 +71,33 @@ export function App() {
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
   const [steps, setSteps] = useState<Step[]>([]);
+  const [draft, setDraft] = useState("");
   const abortRef = useRef<AbortController | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  // The input is disabled while busy, which drops focus; give it back afterwards.
+  useEffect(() => {
+    if (!busy) inputRef.current?.focus();
+  }, [busy]);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
-  }, [messages, steps]);
+  }, [messages, steps, draft]);
 
   async function send(question: string) {
     if (!question.trim() || busy) return;
 
     // Send prior answers too, so follow-ups ("what about Initech?") and answers to
-    // clarifying questions keep their context. Failed turns are left out.
-    const history = [...messages.filter((m) => !m.error), { role: "user" as const, text: question }];
+    // clarifying questions keep their context. Failed or stopped exchanges (the
+    // error and the question that caused it) are left out.
+    const answered = messages.filter((m, i) => !m.error && !messages[i + 1]?.error);
+    const history = [...answered, { role: "user" as const, text: question }];
     setMessages((prev) => [...prev, { role: "user", text: question }]);
     setInput("");
     setBusy(true);
     setSteps([]);
+    setDraft("");
 
     const abort = new AbortController();
     abortRef.current = abort;
@@ -114,7 +125,12 @@ export function App() {
         buffer = lines.pop()!;
         for (const line of lines.filter(Boolean)) {
           const event = JSON.parse(line) as ServerEvent;
-          if (event.type === "tool_start") {
+          if (event.type === "text") {
+            setDraft((prev) => prev + event.delta);
+          } else if (event.type === "iteration") {
+            // Text from an earlier step was preamble to tool calls, not the answer.
+            setDraft("");
+          } else if (event.type === "tool_start") {
             collected.push({ id: event.id, name: event.name, input: event.input });
           } else if (event.type === "tool_end") {
             const step = collected.find((s) => s.id === event.id);
@@ -175,10 +191,16 @@ export function App() {
 
         {busy && (
           <div className="bubble assistant pending" aria-live="polite">
-            <Steps steps={steps} open />
-            <span className="thinking">
-              {steps.some((s) => s.ms === undefined) ? "Researching…" : steps.length ? "Analyzing…" : "Thinking…"}
-            </span>
+            <Steps steps={steps} open={!draft} />
+            {draft ? (
+              <div className="markdown streaming">
+                <Markdown remarkPlugins={[remarkGfm]}>{draft}</Markdown>
+              </div>
+            ) : (
+              <span className="thinking">
+                {steps.some((s) => s.ms === undefined) ? "Researching…" : steps.length ? "Analyzing…" : "Thinking…"}
+              </span>
+            )}
           </div>
         )}
         <div ref={bottomRef} />
@@ -192,11 +214,12 @@ export function App() {
         }}
       >
         <input
+          ref={inputRef}
+          aria-label="Research question"
           value={input}
           onChange={(e) => setInput(e.target.value)}
           placeholder={messages.length ? "Ask a follow-up…" : "Ask a research question…"}
           disabled={busy}
-          autoFocus
         />
         {busy ? (
           <button type="button" onClick={() => abortRef.current?.abort()}>

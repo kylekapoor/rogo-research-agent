@@ -1,6 +1,6 @@
 import type Anthropic from "@anthropic-ai/sdk";
 import { describe, expect, it } from "vitest";
-import { runAgent } from "./agent.ts";
+import { parseHistory, runAgent } from "./agent.ts";
 import { executeTool, resolveCompany } from "./tools.ts";
 
 describe("resolveCompany", () => {
@@ -28,15 +28,34 @@ describe("searchDocuments", () => {
 
 type Params = Anthropic.MessageCreateParamsNonStreaming;
 
+describe("parseHistory", () => {
+  const conversation = (n: number) =>
+    Array.from({ length: n }, (_, i) => ({ role: i % 2 ? "assistant" : "user", content: `turn ${i}` }));
+
+  it("keeps long conversations working by trimming to a window that starts on a user turn", () => {
+    const turns = parseHistory({ messages: conversation(41) })!;
+    expect(turns.length).toBeLessThanOrEqual(20);
+    expect(turns[0].role).toBe("user");
+    expect(turns.at(-1)!.content).toBe("turn 40");
+  });
+
+  it("rejects malformed bodies", () => {
+    expect(parseHistory({ message: "old shape" })).toBeNull();
+    expect(parseHistory({ messages: conversation(2) })).toBeNull(); // ends on assistant
+    expect(parseHistory({ messages: [{ role: "system", content: "x" }] })).toBeNull();
+  });
+});
+
 /** A fake client that answers each request with `respond` and records the requests. */
 function fakeClient(respond: (params: Params, n: number) => object) {
   const requests: Params[] = [];
   const client = {
     messages: {
-      create: async (params: Params) => {
+      stream: (params: Params) => {
         // Snapshot: the agent keeps mutating its messages array after the call.
         requests.push(structuredClone(params));
-        return respond(params, requests.length);
+        const message = respond(params, requests.length);
+        return { on: () => {}, finalMessage: async () => message };
       },
     },
   } as unknown as Anthropic;

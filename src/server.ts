@@ -1,29 +1,12 @@
 import "dotenv/config";
 import express from "express";
-import { runAgent, type AgentEvent, type ChatTurn } from "./agent.ts";
+import { parseHistory, runAgent, type AgentEvent } from "./agent.ts";
 
 if (!process.env.ANTHROPIC_API_KEY) {
   console.error(
     "\nANTHROPIC_API_KEY is not set.\nCopy .env.example to .env and add your key, then run `npm run dev` again.\n",
   );
   process.exit(1);
-}
-
-/** How many prior turns we send back to the model. Older context is dropped. */
-const MAX_TURNS = 20;
-
-function parseHistory(body: unknown): ChatTurn[] | null {
-  const raw = (body as { messages?: unknown })?.messages;
-  if (!Array.isArray(raw) || raw.length === 0) return null;
-  const turns = raw.slice(-MAX_TURNS);
-  const valid = turns.every(
-    (t) =>
-      (t?.role === "user" || t?.role === "assistant") &&
-      typeof t.content === "string" &&
-      t.content.trim() !== "",
-  );
-  if (!valid || turns[0].role !== "user" || turns.at(-1).role !== "user") return null;
-  return turns.map((t) => ({ role: t.role, content: t.content }));
 }
 
 function log(event: AgentEvent) {
@@ -64,7 +47,7 @@ app.post("/api/chat", async (req, res) => {
     res.status(400).json({ error: "Expected { messages: [{ role, content }] } ending with a user message." });
     return;
   }
-  console.log(`\n[chat] ${history.at(-1)!.content}`);
+  console.log(`\n[chat] (${history.length} turn${history.length === 1 ? "" : "s"}) ${history.at(-1)!.content}`);
 
   // Stop calling the model if the analyst navigates away or presses Stop.
   const abort = new AbortController();
