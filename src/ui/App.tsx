@@ -90,9 +90,11 @@ export function App() {
 
     // Send prior answers too, so follow-ups ("what about Initech?") and answers to
     // clarifying questions keep their context. Failed or stopped exchanges (the
-    // error and the question that caused it) are left out.
+    // error and the question that caused it) are left out. Only the last 20 turns
+    // go up: that's all the server keeps, and the full transcript eventually
+    // exceeds the server's 100 KB request limit.
     const answered = messages.filter((m, i) => !m.error && !messages[i + 1]?.error);
-    const history = [...answered, { role: "user" as const, text: question }];
+    const history = [...answered, { role: "user" as const, text: question }].slice(-20);
     setMessages((prev) => [...prev, { role: "user", text: question }]);
     setInput("");
     setBusy(true);
@@ -132,9 +134,11 @@ export function App() {
             setDraft("");
           } else if (event.type === "tool_start") {
             collected.push({ id: event.id, name: event.name, input: event.input });
+            setSteps([...collected]);
           } else if (event.type === "tool_end") {
             const step = collected.find((s) => s.id === event.id);
             if (step) Object.assign(step, { ms: event.ms, error: event.error });
+            setSteps([...collected]);
           } else if (event.type === "answer") {
             finish({ text: event.text });
             done = true;
@@ -142,7 +146,6 @@ export function App() {
             finish({ text: event.message, error: true });
             done = true;
           }
-          setSteps([...collected]);
         }
       }
       if (!done) throw new Error("the connection closed before an answer arrived");
