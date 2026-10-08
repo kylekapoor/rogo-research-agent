@@ -46,5 +46,5 @@ The same questions against `claude-sonnet-5`, wall clock:
 - **Auto-scroll while streaming** pulls the view down even if the analyst has scrolled up to read. It needs a "stick to bottom only if already at bottom" check.
 - **Document search is still literal keyword matching.** The real fix is semantic search upstream, not more prompt workarounds.
 - **Truncated responses (`stop_reason: "max_tokens"`) aren't handled.** A cut-off answer would be shown as-is. That's unlikely at 16k tokens when answers run about 1k; the fix is to flag it or retry.
-- **No persistence, auth or rate limiting, and the `npm audit` warnings are unchanged.** Because the browser holds the history, a client could also send fabricated "assistant" turns. A real deployment would keep the conversation server-side. All of this is out of scope for the exercise.
+- **No persistence, auth or rate limiting, and the `npm audit` warnings are unchanged.** Because the browser holds the history, a client could also send fabricated "assistant" turns. A real deployment would keep the conversation server-side. All of this is out of scope for now.
 - **Note:** the `/api/chat` request body changed from `{ message }` to `{ messages: [{ role, content }] }`.
