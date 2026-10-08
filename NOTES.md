@@ -29,12 +29,12 @@ The same questions against `claude-sonnet-5`, wall clock:
 - **Prompt caching.** One cache breakpoint on the system prompt and one on the end of the transcript. The `[model]` log line shows about 2k cached tokens read per call.
 
 **Product / UX**
-- **Streams progress and the answer itself.** `/api/chat` now returns NDJSON events. While the agent works, the UI shows each research step as it runs and finishes ("Pulling financials — Acme Robotics ✓ 0.8s"), then streams the answer as it's written, instead of a blank "Thinking…" for 30s. The final answer call is most of the remaining time (9–12s of a 15s run), so the analyst can start reading at about 5s. The steps stay on each answer, collapsed, so analysts can check where numbers came from.
-- **Markdown rendering** (`react-markdown` + `remark-gfm`). The model already wrote tables and bold text, and they were showing up as raw `|---|` text.
+- **Streams progress and the answer itself.** `/api/chat` now returns NDJSON events. While the agent works, the UI shows each research step as it runs and finishes ("Pulling financials — Acme Robotics ✓ 0.8s"), then streams the answer as it's written, instead of a blank "Thinking…" for 30s. The final answer call is most of the remaining time (9–12s of a 15s run), so the analyst can start reading at about 5s. The steps stay on each answer, collapsed, so analysts can check where numbers came from. Any text the model writes before its tool calls is dropped once the tools start, so it isn't mistaken for the answer and doesn't hide the live steps. Past answers are memoized, so streaming a new answer doesn't re-parse the markdown of every earlier one.
+- **Markdown rendering** (`react-markdown` + `remark-gfm`). The model already wrote tables and bold text, and they were showing up as raw `|---|` text. Images are not rendered: model output is untrusted, and with real documents a prompt-injected `![](https://…?q=…)` could leak conversation data just by loading.
 - **Stop button**, plus server-side abort: closing the request cancels the in-flight model call so nothing keeps spending tokens. Errors get their own styling, and the server no longer sends raw exception strings to the client. The input is labelled for screen readers and gets focus back after each answer.
 
 **Engineering**
-- **`npm test` now has tests** (it previously found none). They cover entity resolution, document listing, parallel tool results with `is_error`, and the forced final answer at the iteration cap. The loop is tested with an injected fake client, so no API key or network is needed.
+- **`npm test` now has tests** (it previously found none). They cover entity resolution (including "ACME" resolving while "Acme" stays ambiguous), document listing, history validation and trimming, concurrent tool calls with `is_error` results, and the forced final answer at the iteration cap. The loop is tested with an injected fake client, so no API key or network is needed. Concurrency is checked by event order rather than wall-clock time, so the test doesn't flake on a slow machine.
 - **Server logs** now include per-call latency, token usage and cache hits, and total time per answer.
 
 ## Deliberately not done
@@ -45,5 +45,6 @@ The same questions against `claude-sonnet-5`, wall clock:
 - **Model and effort are unchanged.** Lower effort, or a faster model for the tool-calling turns, would cut latency further. That's a quality trade-off I'd only make with evals in place.
 - **Auto-scroll while streaming** pulls the view down even if the analyst has scrolled up to read. It needs a "stick to bottom only if already at bottom" check.
 - **Document search is still literal keyword matching.** The real fix is semantic search upstream, not more prompt workarounds.
-- **No persistence, auth or rate limiting. The model and the `npm audit` warnings are unchanged.** All out of scope for this exercise.
+- **Truncated responses (`stop_reason: "max_tokens"`) aren't handled.** A cut-off answer would be shown as-is. That's unlikely at 16k tokens when answers run about 1k; the fix is to flag it or retry.
+- **No persistence, auth or rate limiting, and the `npm audit` warnings are unchanged.** Because the browser holds the history, a client could also send fabricated "assistant" turns. A real deployment would keep the conversation server-side. All of this is out of scope for the exercise.
 - **Note:** the `/api/chat` request body changed from `{ message }` to `{ messages: [{ role, content }] }`.

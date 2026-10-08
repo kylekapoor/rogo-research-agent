@@ -50,7 +50,7 @@ export interface AgentResult {
 /** Prior turns of the conversation, as plain text. The last one is the new question. */
 export type ChatTurn = { role: "user" | "assistant"; content: string };
 
-/** How many prior turns we send back to the model. Older context is dropped. */
+/** How many prior turns we send back to the model. Older context is dropped. The UI sends the same window. */
 const MAX_TURNS = 20;
 
 /** Validate a request body's `messages` and trim it to the most recent turns. */

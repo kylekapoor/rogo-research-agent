@@ -4,14 +4,17 @@ import { parseHistory, runAgent } from "./agent.ts";
 import { executeTool, resolveCompany } from "./tools.ts";
 
 describe("resolveCompany", () => {
-  it("accepts names, tickers and unique partial names in any case", () => {
-    expect(resolveCompany("Globex Inc").ticker).toBe("GLBX");
-    expect(resolveCompany("itch").name).toBe("Initech");
-    expect(resolveCompany("umbrella").name).toBe("Umbrella Health");
+  it("accepts exact names, tickers in any case, and unique partial names", () => {
+    expect(resolveCompany("globex inc").ticker).toBe("GLBX");
+    expect(resolveCompany("GLBX").name).toBe("Globex Inc");
+    expect(resolveCompany("itch").name).toBe("Initech"); // lower-case ticker; not part of any name
+    expect(resolveCompany("robotics").name).toBe("Acme Robotics");
   });
 
-  it("refuses to guess between companies that share a name", () => {
+  it("treats an upper-case ticker as exact but refuses to guess on a shared name", () => {
+    expect(resolveCompany("ACME").name).toBe("Acme Corp");
     expect(() => resolveCompany("Acme")).toThrow(/ambiguous.*Acme Corp.*Acme Robotics/);
+    expect(() => resolveCompany("acme")).toThrow(/ambiguous/);
   });
 
   it("lists the universe for unknown companies", () => {
@@ -80,11 +83,16 @@ describe("runAgent", () => {
         : text("Which Acme?"),
     );
 
-    const startedAt = Date.now();
-    const result = await runAgent([{ role: "user", content: "q" }], () => {}, { client });
+    const order: string[] = [];
+    const result = await runAgent(
+      [{ role: "user", content: "q" }],
+      (e) => (e.type === "tool_start" || e.type === "tool_end") && order.push(`${e.type}:${e.id}`),
+      { client },
+    );
 
     expect(result.answer).toBe("Which Acme?");
-    expect(Date.now() - startedAt).toBeLessThan(1500); // two 800ms tools, run concurrently
+    // Both tools start before either finishes, i.e. they ran concurrently.
+    expect(order.slice(0, 2).sort()).toEqual(["tool_start:a", "tool_start:b"]);
     const toolResults = requests[1].messages.at(-1)!.content as Anthropic.ToolResultBlockParam[];
     expect(toolResults.map((r) => [r.tool_use_id, r.is_error ?? false])).toEqual([
       ["a", false],

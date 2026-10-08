@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { memo, useEffect, useRef, useState } from "react";
 import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 
@@ -46,6 +46,11 @@ function describe(step: Step): string {
   return `${TOOL_LABELS[step.name] ?? step.name}${subject ? ` — ${subject}` : ""}`;
 }
 
+/** Model output is untrusted: render no images, so a remote URL can't leak data on load. */
+function Answer({ text }: { text: string }) {
+  return <Markdown remarkPlugins={[remarkGfm]} disallowedElements={["img"]}>{text}</Markdown>;
+}
+
 function Steps({ steps, open }: { steps: Step[]; open: boolean }) {
   if (steps.length === 0) return null;
   return (
@@ -65,6 +70,22 @@ function Steps({ steps, open }: { steps: Step[]; open: boolean }) {
     </details>
   );
 }
+
+/** Memoized: each streamed token re-renders App, and re-parsing every past answer's markdown adds up. */
+const Bubble = memo(function Bubble({ message }: { message: Message }) {
+  return (
+    <div className={`bubble ${message.role}${message.error ? " error" : ""}`}>
+      {message.steps && <Steps steps={message.steps} open={false} />}
+      {message.role === "assistant" && !message.error ? (
+        <div className="markdown">
+          <Answer text={message.text} />
+        </div>
+      ) : (
+        message.text
+      )}
+    </div>
+  );
+});
 
 export function App() {
   const [messages, setMessages] = useState<Message[]>([]);
@@ -129,15 +150,15 @@ export function App() {
           const event = JSON.parse(line) as ServerEvent;
           if (event.type === "text") {
             setDraft((prev) => prev + event.delta);
-          } else if (event.type === "iteration") {
-            // Text from an earlier step was preamble to tool calls, not the answer.
-            setDraft("");
           } else if (event.type === "tool_start") {
+            // Any text so far was preamble to these tool calls, not the answer;
+            // drop it so the live steps stay visible.
+            setDraft("");
             collected.push({ id: event.id, name: event.name, input: event.input });
             setSteps([...collected]);
           } else if (event.type === "tool_end") {
-            const step = collected.find((s) => s.id === event.id);
-            if (step) Object.assign(step, { ms: event.ms, error: event.error });
+            const i = collected.findIndex((s) => s.id === event.id);
+            if (i >= 0) collected[i] = { ...collected[i], ms: event.ms, error: event.error };
             setSteps([...collected]);
           } else if (event.type === "answer") {
             finish({ text: event.text });
@@ -180,16 +201,7 @@ export function App() {
         )}
 
         {messages.map((message, i) => (
-          <div key={i} className={`bubble ${message.role}${message.error ? " error" : ""}`}>
-            {message.steps && <Steps steps={message.steps} open={false} />}
-            {message.role === "assistant" && !message.error ? (
-              <div className="markdown">
-                <Markdown remarkPlugins={[remarkGfm]}>{message.text}</Markdown>
-              </div>
-            ) : (
-              message.text
-            )}
-          </div>
+          <Bubble key={i} message={message} />
         ))}
 
         {busy && (
@@ -197,7 +209,7 @@ export function App() {
             <Steps steps={steps} open={!draft} />
             {draft ? (
               <div className="markdown streaming">
-                <Markdown remarkPlugins={[remarkGfm]}>{draft}</Markdown>
+                <Answer text={draft} />
               </div>
             ) : (
               <span className="thinking">
