@@ -1,8 +1,12 @@
 # Research Agent
 
+[![tests](https://github.com/kylekapoor/rogo-research-agent/actions/workflows/tests.yml/badge.svg)](https://github.com/kylekapoor/rogo-research-agent/actions/workflows/tests.yml)
+
 A chat-based research assistant for financial analysts. Ask a question about a company and the agent pulls profiles, financials and filings through a set of research tools, then answers with cited figures, explicit caveats and the working behind any derived numbers.
 
 The data is a small fictional coverage universe (`src/data.ts`), so everything runs locally and deterministically. Only the model call goes over the network.
+
+![an ambiguous question, a clarifying reply, then a cited comparison with its research trace](docs/screenshot.png)
 
 ## Features
 

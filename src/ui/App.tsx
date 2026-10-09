@@ -46,9 +46,12 @@ function describe(step: Step): string {
   return `${TOOL_LABELS[step.name] ?? step.name}${subject ? ` — ${subject}` : ""}`;
 }
 
-/** Model output is untrusted: render no images, so a remote URL can't leak data on load. */
+/**
+ * Model output is untrusted: render no images, so a remote URL can't leak data on load.
+ * singleTilde off: the model writes "~48%" for "about 48%", which GFM would strike through.
+ */
 function Answer({ text }: { text: string }) {
-  return <Markdown remarkPlugins={[remarkGfm]} disallowedElements={["img"]}>{text}</Markdown>;
+  return <Markdown remarkPlugins={[[remarkGfm, { singleTilde: false }]]} disallowedElements={["img"]}>{text}</Markdown>;
 }
 
 function Steps({ steps, open }: { steps: Step[]; open: boolean }) {
